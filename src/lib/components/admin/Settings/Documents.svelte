@@ -46,12 +46,14 @@
 	let fileMaxSize = null;
 	let fileMaxCount = null;
 
-	let contentExtractionEngine = 'default';
-	let tikaServerUrl = '';
-	let showTikaServerUrl = false;
-	let doclingServerUrl = '';
-	let showDoclingServerUrl = false;
-	let documentIntelligenceEndpoint = '';
+let contentExtractionEngine = 'default';
+let tikaServerUrl = '';
+let showTikaServerUrl = false;
+let doclingServerUrl = '';
+let showDoclingServerUrl = false;
+let doclingApiServerUrl = '';
+let showDoclingApiServerUrl = false;
+let documentIntelligenceEndpoint = '';
 	let documentIntelligenceKey = '';
 	let showDocumentIntelligenceConfig = false;
 	let mistralApiKey = '';
@@ -184,6 +186,10 @@
 			toast.error($i18n.t('Docling Server URL required.'));
 			return;
 		}
+		if (contentExtractionEngine === 'docling_api' && doclingApiServerUrl === '') {
+			toast.error($i18n.t('Docling API Server URL required.'));
+			return;
+		}
 		if (
 			contentExtractionEngine === 'document_intelligence' &&
 			(documentIntelligenceEndpoint === '' || documentIntelligenceKey === '')
@@ -223,6 +229,7 @@
 				engine: contentExtractionEngine,
 				tika_server_url: tikaServerUrl,
 				docling_server_url: doclingServerUrl,
+				docling_api_server_url: doclingApiServerUrl,
 				document_intelligence_config: {
 					key: documentIntelligenceKey,
 					endpoint: documentIntelligenceEndpoint
@@ -287,9 +294,11 @@
 			contentExtractionEngine = res.content_extraction.engine;
 			tikaServerUrl = res.content_extraction.tika_server_url;
 			doclingServerUrl = res.content_extraction.docling_server_url;
+			doclingApiServerUrl = res.content_extraction.docling_api_server_url;
 
 			showTikaServerUrl = contentExtractionEngine === 'tika';
 			showDoclingServerUrl = contentExtractionEngine === 'docling';
+			showDoclingApiServerUrl = contentExtractionEngine === 'docling_api';
 			documentIntelligenceEndpoint = res.content_extraction.document_intelligence_config.endpoint;
 			documentIntelligenceKey = res.content_extraction.document_intelligence_config.key;
 			showDocumentIntelligenceConfig = contentExtractionEngine === 'document_intelligence';
@@ -359,6 +368,7 @@
 								<option value="">{$i18n.t('Default')}</option>
 								<option value="tika">{$i18n.t('Tika')}</option>
 								<option value="docling">{$i18n.t('Docling')}</option>
+								<option value="docling_api">{$i18n.t('Docling API')}</option>
 								<option value="document_intelligence">{$i18n.t('Document Intelligence')}</option>
 								<option value="mistral_ocr">{$i18n.t('Mistral OCR')}</option>
 							</select>
@@ -380,6 +390,14 @@
 								class="flex-1 w-full rounded-lg text-sm bg-transparent outline-hidden"
 								placeholder={$i18n.t('Enter Docling Server URL')}
 								bind:value={doclingServerUrl}
+							/>
+						</div>
+					{:else if contentExtractionEngine === 'docling_api'}
+						<div class="flex w-full mt-1">
+							<input
+								class="flex-1 w-full rounded-lg text-sm bg-transparent outline-hidden"
+								placeholder={$i18n.t('Enter Docling API Server URL')}
+								bind:value={doclingApiServerUrl}
 							/>
 						</div>
 					{:else if contentExtractionEngine === 'document_intelligence'}

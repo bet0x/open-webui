@@ -1735,6 +1735,12 @@ DOCLING_SERVER_URL = PersistentConfig(
     os.getenv("DOCLING_SERVER_URL", "http://docling:5001"),
 )
 
+DOCLING_API_SERVER_URL = PersistentConfig(
+    "DOCLING_API_SERVER_URL",
+    "rag.docling_api_server_url",
+    os.getenv("DOCLING_API_SERVER_URL", "http://localhost:8822"),
+)
+
 DOCUMENT_INTELLIGENCE_ENDPOINT = PersistentConfig(
     "DOCUMENT_INTELLIGENCE_ENDPOINT",
     "rag.document_intelligence_endpoint",

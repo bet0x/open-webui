@@ -22,6 +22,7 @@ from langchain_community.document_loaders import (
 from langchain_core.documents import Document
 
 from open_webui.retrieval.loaders.mistral import MistralLoader
+from open_webui.retrieval.loaders.docling_api import DoclingApiLoader
 
 from open_webui.env import SRC_LOG_LEVELS, GLOBAL_LOG_LEVEL
 
@@ -240,6 +241,22 @@ class Loader:
             loader = MistralLoader(
                 api_key=self.kwargs.get("MISTRAL_OCR_API_KEY"), file_path=file_path
             )
+        elif (
+            self.engine == "docling_api"
+            and self.kwargs.get("DOCLING_API_SERVER_URL") != ""
+        ):
+            if self._is_text_file(file_ext, file_content_type):
+                loader = TextLoader(file_path, autodetect_encoding=True)
+            else:
+                extract_tables_as_images = self.kwargs.get("DOCLING_EXTRACT_TABLES_AS_IMAGES", True)
+                image_resolution_scale = self.kwargs.get("DOCLING_IMAGE_RESOLUTION_SCALE", 4)
+                
+                loader = DoclingApiLoader(
+                    url=self.kwargs.get("DOCLING_API_SERVER_URL"),
+                    file_path=file_path,
+                    extract_tables_as_images=extract_tables_as_images,
+                    image_resolution_scale=image_resolution_scale
+                )
         else:
             if file_ext == "pdf":
                 loader = PyPDFLoader(
