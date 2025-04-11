@@ -1895,6 +1895,24 @@ TIKTOKEN_ENCODING_NAME = PersistentConfig(
     os.environ.get("TIKTOKEN_ENCODING_NAME", "cl100k_base"),
 )
 
+RAG_CHONKIE_CHUNKER = PersistentConfig(
+    "RAG_CHONKIE_CHUNKER",
+    "rag.chonkie_chunker",
+    os.environ.get("RAG_CHONKIE_CHUNKER", ""),  # Default to empty string
+)
+
+# Chunker-specific parameters
+CHUNK_PARAMS = PersistentConfig(
+    "CHUNK_PARAMS",
+    "rag.chunk_params",
+    {
+        "similarity_threshold": float(os.environ.get("CHUNK_SIMILARITY_THRESHOLD", "0.75")),
+        "chunking_mode": os.environ.get("CHUNK_MODE", "sentence"),
+        "min_sentences_per_chunk": int(os.environ.get("CHUNK_MIN_SENTENCES", "1")),
+        "min_characters_per_chunk": int(os.environ.get("CHUNK_MIN_CHARACTERS", "24")),
+        "separators": os.environ.get("CHUNK_SEPARATORS", "\\n\\n,\\n, ,"),
+    },
+)
 
 CHUNK_SIZE = PersistentConfig(
     "CHUNK_SIZE", "rag.chunk_size", int(os.environ.get("CHUNK_SIZE", "1000"))

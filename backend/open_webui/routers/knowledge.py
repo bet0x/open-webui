@@ -456,6 +456,13 @@ def remove_file_from_knowledge_by_id(
         log.debug(e)
         pass
 
+    # Delete file from disk
+    try:
+        Storage.delete_file(file.filename)
+    except Exception as e:
+        log.error(f"Error deleting file from disk: {e}")
+        pass
+
     # Delete file from database
     Files.delete_file_by_id(form_data.file_id)
 

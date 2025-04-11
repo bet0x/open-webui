@@ -63,6 +63,13 @@ let documentIntelligenceEndpoint = '';
 	let chunkSize = 0;
 	let chunkOverlap = 0;
 	let pdfExtractImages = true;
+	
+	// Chonkie chunker specific parameters
+	let similarityThreshold = 0.75; // For semantic, SDPM, and late chunkers
+	let lateChunkerMode = 'sentence'; // For late chunker
+	let minSentencesPerChunk = 1; // For sentence and late chunkers
+	let minCharactersPerChunk = 24; // For late chunker
+	let recursiveSeparators = '\\n\\n,\\n, ,'; // For recursive chunker
 
 	let RAG_FULL_CONTEXT = false;
 	let BYPASS_EMBEDDING_AND_RETRIEVAL = false;
@@ -210,6 +217,28 @@ let documentIntelligenceEndpoint = '';
 			}
 		}
 
+		// Prepare chunker-specific parameters
+		const chunkerParams = {
+			text_splitter: textSplitter,
+			chunk_overlap: chunkOverlap,
+			chunk_size: chunkSize
+		};
+		
+		// Add specific parameters based on the selected chunker
+		if (textSplitter.startsWith('chonkie_semantic') || textSplitter.startsWith('chonkie_sdpm') || textSplitter.startsWith('chonkie_late')) {
+			chunkerParams.similarity_threshold = similarityThreshold;
+		}
+		
+		if (textSplitter.startsWith('chonkie_late')) {
+			chunkerParams.chunking_mode = lateChunkerMode;
+			chunkerParams.min_sentences_per_chunk = minSentencesPerChunk;
+			chunkerParams.min_characters_per_chunk = minCharactersPerChunk;
+		} else if (textSplitter.startsWith('chonkie_sentence')) {
+			chunkerParams.min_sentences_per_chunk = minSentencesPerChunk;
+		} else if (textSplitter.startsWith('chonkie_recursive')) {
+			chunkerParams.separators = recursiveSeparators;
+		}
+		
 		const res = await updateRAGConfig(localStorage.token, {
 			pdf_extract_images: pdfExtractImages,
 			enable_google_drive_integration: enableGoogleDriveIntegration,
@@ -220,11 +249,7 @@ let documentIntelligenceEndpoint = '';
 			},
 			RAG_FULL_CONTEXT: RAG_FULL_CONTEXT,
 			BYPASS_EMBEDDING_AND_RETRIEVAL: BYPASS_EMBEDDING_AND_RETRIEVAL,
-			chunk: {
-				text_splitter: textSplitter,
-				chunk_overlap: chunkOverlap,
-				chunk_size: chunkSize
-			},
+			chunk: chunkerParams,
 			content_extraction: {
 				engine: contentExtractionEngine,
 				tika_server_url: tikaServerUrl,
@@ -271,6 +296,14 @@ let documentIntelligenceEndpoint = '';
 
 	const toggleHybridSearch = async () => {
 		querySettings = await updateQuerySettings(localStorage.token, querySettings);
+	};
+	
+	const resetChunkerParams = () => {
+		// Reset any chunker-specific parameters when changing the text splitter type
+		// This function is called when the text splitter dropdown changes
+		// For now, we'll just keep the chunk size and overlap as they are
+		// In the future, we could add more specific parameters for each chunker type
+		console.log('Text splitter changed to:', textSplitter);
 	};
 
 	onMount(async () => {
@@ -461,9 +494,20 @@ let documentIntelligenceEndpoint = '';
 							<select
 								class="dark:bg-gray-900 w-fit pr-8 rounded-sm px-2 text-xs bg-transparent outline-hidden text-right"
 								bind:value={textSplitter}
+								on:change={() => {
+									resetChunkerParams();
+								}}
 							>
 								<option value="">{$i18n.t('Default')} ({$i18n.t('Character')})</option>
 								<option value="token">{$i18n.t('Token')} ({$i18n.t('Tiktoken')})</option>
+								<optgroup label={$i18n.t('Chonkie Chunkers')}>
+									<option value="chonkie_token">{$i18n.t('Chonkie Token')}</option>
+									<option value="chonkie_sentence">{$i18n.t('Chonkie Sentence')}</option>
+									<option value="chonkie_recursive">{$i18n.t('Chonkie Recursive')}</option>
+									<option value="chonkie_semantic">{$i18n.t('Chonkie Semantic')}</option>
+									<option value="chonkie_sdpm">{$i18n.t('Chonkie SDPM')}</option>
+									<option value="chonkie_late">{$i18n.t('Chonkie Late')}</option>
+								</optgroup>
 							</select>
 						</div>
 					</div>
@@ -504,6 +548,96 @@ let documentIntelligenceEndpoint = '';
 							</div>
 						</div>
 					</div>
+
+					{#if textSplitter.startsWith('chonkie_semantic') || textSplitter.startsWith('chonkie_sdpm') || textSplitter.startsWith('chonkie_late')}
+						<div class="mb-2.5 flex w-full justify-between">
+							<div class="self-center text-xs font-medium">{$i18n.t('Similarity Threshold')}</div>
+							<div class="flex items-center relative">
+								<input
+									class="flex-1 w-full rounded-lg text-sm bg-transparent outline-hidden"
+									type="number"
+									step="0.01"
+									placeholder={$i18n.t('Enter Threshold (0.0-1.0)')}
+									bind:value={similarityThreshold}
+									autocomplete="off"
+									min="0.0"
+									max="1.0"
+								/>
+							</div>
+						</div>
+					{/if}
+
+					{#if textSplitter.startsWith('chonkie_late')}
+						<div class="mb-2.5 flex w-full justify-between">
+							<div class="self-center text-xs font-medium">{$i18n.t('Chunking Mode')}</div>
+							<div class="flex items-center relative">
+								<select
+									class="dark:bg-gray-900 w-fit pr-8 rounded-sm px-2 text-xs bg-transparent outline-hidden text-right"
+									bind:value={lateChunkerMode}
+								>
+									<option value="sentence">{$i18n.t('Sentence')}</option>
+									<option value="token">{$i18n.t('Token')}</option>
+								</select>
+							</div>
+						</div>
+
+						<div class="mb-2.5 flex w-full justify-between">
+							<div class="self-center text-xs font-medium">{$i18n.t('Min Sentences Per Chunk')}</div>
+							<div class="flex items-center relative">
+								<input
+									class="flex-1 w-full rounded-lg text-sm bg-transparent outline-hidden"
+									type="number"
+									placeholder={$i18n.t('Enter Min Sentences')}
+									bind:value={minSentencesPerChunk}
+									autocomplete="off"
+									min="1"
+								/>
+							</div>
+						</div>
+
+						<div class="mb-2.5 flex w-full justify-between">
+							<div class="self-center text-xs font-medium">{$i18n.t('Min Characters Per Chunk')}</div>
+							<div class="flex items-center relative">
+								<input
+									class="flex-1 w-full rounded-lg text-sm bg-transparent outline-hidden"
+									type="number"
+									placeholder={$i18n.t('Enter Min Characters')}
+									bind:value={minCharactersPerChunk}
+									autocomplete="off"
+									min="1"
+								/>
+							</div>
+						</div>
+					{/if}
+
+					{#if textSplitter.startsWith('chonkie_sentence')}
+						<div class="mb-2.5 flex w-full justify-between">
+							<div class="self-center text-xs font-medium">{$i18n.t('Min Sentences Per Chunk')}</div>
+							<div class="flex items-center relative">
+								<input
+									class="flex-1 w-full rounded-lg text-sm bg-transparent outline-hidden"
+									type="number"
+									placeholder={$i18n.t('Enter Min Sentences')}
+									bind:value={minSentencesPerChunk}
+									autocomplete="off"
+									min="1"
+								/>
+							</div>
+						</div>
+					{/if}
+
+					{#if textSplitter.startsWith('chonkie_recursive')}
+						<div class="mb-2.5 flex w-full justify-between">
+							<div class="self-center text-xs font-medium">{$i18n.t('Custom Separators')}</div>
+							<div class="flex items-center relative">
+								<input
+									class="flex-1 w-full rounded-lg text-sm bg-transparent outline-hidden"
+									placeholder={$i18n.t('Enter separators (comma separated)')}
+									bind:value={recursiveSeparators}
+								/>
+							</div>
+						</div>
+					{/if}
 				{/if}
 			</div>
 

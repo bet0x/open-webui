@@ -575,6 +575,50 @@ async def update_rag_config(
         request.app.state.config.TEXT_SPLITTER = form_data.chunk.text_splitter
         request.app.state.config.CHUNK_SIZE = form_data.chunk.chunk_size
         request.app.state.config.CHUNK_OVERLAP = form_data.chunk.chunk_overlap
+        
+        # Handle chunker-specific parameters
+        chunk_params = {}
+        
+        # Copy existing parameters if CHUNK_PARAMS exists
+        if hasattr(request.app.state.config, 'CHUNK_PARAMS') and request.app.state.config.CHUNK_PARAMS is not None:
+            # Check if CHUNK_PARAMS is a PersistentConfig object or a dictionary
+            if hasattr(request.app.state.config.CHUNK_PARAMS, 'value'):
+                chunk_params = request.app.state.config.CHUNK_PARAMS.value.copy()
+            else:
+                chunk_params = request.app.state.config.CHUNK_PARAMS.copy()
+        
+        # Update with new parameters if provided
+        if hasattr(form_data.chunk, 'similarity_threshold'):
+            chunk_params['similarity_threshold'] = form_data.chunk.similarity_threshold
+        
+        if hasattr(form_data.chunk, 'chunking_mode'):
+            chunk_params['chunking_mode'] = form_data.chunk.chunking_mode
+            
+        if hasattr(form_data.chunk, 'min_sentences_per_chunk'):
+            chunk_params['min_sentences_per_chunk'] = form_data.chunk.min_sentences_per_chunk
+            
+        if hasattr(form_data.chunk, 'min_characters_per_chunk'):
+            chunk_params['min_characters_per_chunk'] = form_data.chunk.min_characters_per_chunk
+            
+        if hasattr(form_data.chunk, 'separators'):
+            chunk_params['separators'] = form_data.chunk.separators
+            
+        # Update the CHUNK_PARAMS configuration
+        # First check if CHUNK_PARAMS exists in the config, if not create it
+        if not hasattr(request.app.state.config, 'CHUNK_PARAMS') or request.app.state.config.CHUNK_PARAMS is None:
+            from open_webui.config import PersistentConfig
+            request.app.state.config.CHUNK_PARAMS = PersistentConfig(
+                "CHUNK_PARAMS",
+                "rag.chunk_params",
+                chunk_params
+            )
+        else:
+            # Check if CHUNK_PARAMS is a PersistentConfig object or a dictionary
+            if hasattr(request.app.state.config.CHUNK_PARAMS, 'value'):
+                request.app.state.config.CHUNK_PARAMS.value = chunk_params
+            else:
+                # If it's a dictionary, update it directly
+                request.app.state.config.CHUNK_PARAMS = chunk_params
 
     if form_data.youtube is not None:
         request.app.state.config.YOUTUBE_LOADER_LANGUAGE = form_data.youtube.language
@@ -849,10 +893,210 @@ def save_docs_to_vector_db(
                 chunk_overlap=request.app.state.config.CHUNK_OVERLAP,
                 add_start_index=True,
             )
+        elif request.app.state.config.TEXT_SPLITTER.startswith("chonkie_"):
+            # Extract the chunker name from the text_splitter value
+            chunker_name = request.app.state.config.TEXT_SPLITTER.replace("chonkie_", "")
+            try:
+                # Import the appropriate chunker from chonkie
+                if chunker_name == "token":
+                    from chonkie import TokenChunker
+                    
+                    # Use the same tokenizer as configured in Open WebUI
+                    tiktoken_encoding = str(request.app.state.config.TIKTOKEN_ENCODING_NAME)
+                    
+                    log.info(f"Using chonkie TokenChunker with tiktoken encoding: {tiktoken_encoding}")
+                    
+                    # Create a tiktoken encoding object
+                    tiktoken_enc = tiktoken.get_encoding(tiktoken_encoding)
+                    
+                    # Pass the tiktoken.Encoding object directly
+                    chunker = TokenChunker(
+                        chunk_size=request.app.state.config.CHUNK_SIZE, 
+                        chunk_overlap=request.app.state.config.CHUNK_OVERLAP,
+                        tokenizer=tiktoken_enc
+                    )
+                elif chunker_name == "sentence":
+                    from chonkie import SentenceChunker
+                    # Get min_sentences_per_chunk from chunk parameters if available
+                    min_sentences_per_chunk = 1
+                    if hasattr(request.app.state.config, 'CHUNK_PARAMS') and 'min_sentences_per_chunk' in request.app.state.config.CHUNK_PARAMS:
+                        min_sentences_per_chunk = request.app.state.config.CHUNK_PARAMS['min_sentences_per_chunk']
+                    
+                    # Create a tiktoken encoding object
+                    tiktoken_enc = tiktoken.get_encoding(str(request.app.state.config.TIKTOKEN_ENCODING_NAME))
+                    
+                    chunker = SentenceChunker(
+                        chunk_size=request.app.state.config.CHUNK_SIZE, 
+                        chunk_overlap=request.app.state.config.CHUNK_OVERLAP,
+                        min_sentences_per_chunk=min_sentences_per_chunk,
+                        # SentenceChunker uses tokenizer_or_token_counter, not tokenizer
+                        tokenizer_or_token_counter=tiktoken_enc
+                    )
+                elif chunker_name == "recursive":
+                    from chonkie import RecursiveChunker
+                    # Get min_characters_per_chunk from chunk parameters if available
+                    min_characters_per_chunk = 12 # Default value from Chonkie docs
+                    if hasattr(request.app.state.config, 'CHUNK_PARAMS') and 'min_characters_per_chunk' in request.app.state.config.CHUNK_PARAMS:
+                         min_characters_per_chunk = request.app.state.config.CHUNK_PARAMS['min_characters_per_chunk']
+
+                    # Note: Chonkie's RecursiveChunker uses 'rules' instead of 'separators'.
+                    # We are using the default rules for now. If custom rules are needed,
+                    # the UI and this section would need updates to handle RecursiveRules objects.
+
+                    # Create a tiktoken encoding object
+                    tiktoken_enc = tiktoken.get_encoding(str(request.app.state.config.TIKTOKEN_ENCODING_NAME))
+                    
+                    chunker = RecursiveChunker(
+                        chunk_size=request.app.state.config.CHUNK_SIZE,
+                        tokenizer_or_token_counter=tiktoken_enc,
+                        min_characters_per_chunk=min_characters_per_chunk
+                        # rules=RecursiveRules() # Using default rules
+                    )
+                elif chunker_name == "semantic":
+                    from chonkie import SemanticChunker
+                    # Get threshold from chunk parameters if available
+                    threshold = 0.75
+                    if hasattr(request.app.state.config, 'CHUNK_PARAMS') and 'similarity_threshold' in request.app.state.config.CHUNK_PARAMS:
+                        threshold = request.app.state.config.CHUNK_PARAMS['similarity_threshold']
+                    
+                    try:
+                        # Import AutoEmbeddings to create a proper embedding model
+                        from chonkie.embeddings.auto import AutoEmbeddings
+                        
+                        # Create embedding model with only the relevant parameters
+                        embedding_model = AutoEmbeddings.get_embeddings(
+                            request.app.state.config.RAG_EMBEDDING_MODEL
+                        )
+                        # Get min_sentences and min_characters_per_sentence from chunk parameters if available
+                        min_sentences = 1 # Default value from Chonkie docs
+                        min_characters_per_sentence = 12 # Default value from Chonkie docs
+                        if hasattr(request.app.state.config, 'CHUNK_PARAMS'):
+                            if 'min_sentences_per_chunk' in request.app.state.config.CHUNK_PARAMS:
+                                min_sentences = request.app.state.config.CHUNK_PARAMS['min_sentences_per_chunk']
+                            if 'min_characters_per_chunk' in request.app.state.config.CHUNK_PARAMS:
+                                min_characters_per_sentence = request.app.state.config.CHUNK_PARAMS['min_characters_per_chunk']
+
+                        chunker = SemanticChunker(
+                            chunk_size=request.app.state.config.CHUNK_SIZE,
+                            # SemanticChunker does not take chunk_overlap
+                            embedding_model=embedding_model,
+                            threshold=threshold,
+                            min_sentences=min_sentences,
+                            min_characters_per_sentence=min_characters_per_sentence
+                        )
+                    except Exception as e:
+                        log.error(f"Error creating embedding model for SemanticChunker: {e}")
+                        raise ValueError(f"Error creating embedding model for SemanticChunker: {e}")
+                    
+                elif chunker_name == "sdpm":
+                    from chonkie import SDPMChunker
+                    # Get threshold from chunk parameters if available
+                    threshold = 0.75
+                    if hasattr(request.app.state.config, 'CHUNK_PARAMS') and 'similarity_threshold' in request.app.state.config.CHUNK_PARAMS:
+                        threshold = request.app.state.config.CHUNK_PARAMS['similarity_threshold']
+                    
+                    try:
+                        # Import AutoEmbeddings to create a proper embedding model
+                        from chonkie.embeddings.auto import AutoEmbeddings
+                        
+                        # Create embedding model with only the relevant parameters
+                        embedding_model = AutoEmbeddings.get_embeddings(
+                            request.app.state.config.RAG_EMBEDDING_MODEL
+                        )
+                        # Get min_sentences and min_characters_per_sentence from chunk parameters if available
+                        min_sentences = 1 # Default value from Chonkie docs
+                        min_characters_per_sentence = 12 # Default value from Chonkie docs
+                        if hasattr(request.app.state.config, 'CHUNK_PARAMS'):
+                            if 'min_sentences_per_chunk' in request.app.state.config.CHUNK_PARAMS:
+                                min_sentences = request.app.state.config.CHUNK_PARAMS['min_sentences_per_chunk']
+                            if 'min_characters_per_chunk' in request.app.state.config.CHUNK_PARAMS:
+                                min_characters_per_sentence = request.app.state.config.CHUNK_PARAMS['min_characters_per_chunk']
+                        
+                        # skip_window is not currently configurable via UI, using default
+                        skip_window = 1 
+
+                        chunker = SDPMChunker(
+                            chunk_size=request.app.state.config.CHUNK_SIZE,
+                            # SDPMChunker does not take chunk_overlap
+                            embedding_model=embedding_model,
+                            threshold=threshold,
+                            min_sentences=min_sentences,
+                            min_characters_per_sentence=min_characters_per_sentence,
+                            skip_window=skip_window
+                        )
+                    except Exception as e:
+                        log.error(f"Error creating embedding model for SDPMChunker: {e}")
+                        raise ValueError(f"Error creating embedding model for SDPMChunker: {e}")
+                    
+                elif chunker_name == "late":
+                    from chonkie import LateChunker
+                    # Get parameters from chunk parameters if available
+                    mode = "sentence"
+                    min_sentences_per_chunk = 1
+                    min_characters_per_chunk = 24
+                    threshold = 0.75
+                    
+                    if hasattr(request.app.state.config, 'CHUNK_PARAMS'):
+                        if 'chunking_mode' in request.app.state.config.CHUNK_PARAMS:
+                            mode = request.app.state.config.CHUNK_PARAMS['chunking_mode']
+                        if 'min_sentences_per_chunk' in request.app.state.config.CHUNK_PARAMS:
+                            min_sentences_per_chunk = request.app.state.config.CHUNK_PARAMS['min_sentences_per_chunk']
+                        if 'min_characters_per_chunk' in request.app.state.config.CHUNK_PARAMS:
+                            min_characters_per_chunk = request.app.state.config.CHUNK_PARAMS['min_characters_per_chunk']
+                        if 'similarity_threshold' in request.app.state.config.CHUNK_PARAMS:
+                            threshold = request.app.state.config.CHUNK_PARAMS['similarity_threshold']
+                    
+                    try:
+                        # Import AutoEmbeddings to create a proper embedding model
+                        from chonkie.embeddings.auto import AutoEmbeddings
+                        
+                        # Create embedding model with only the relevant parameters
+                        embedding_model = AutoEmbeddings.get_embeddings(
+                            request.app.state.config.RAG_EMBEDDING_MODEL
+                        )
+                        
+                        chunker = LateChunker(
+                            chunk_size=request.app.state.config.CHUNK_SIZE,
+                            # LateChunker does not take chunk_overlap or threshold
+                            embedding_model=embedding_model,
+                            mode=mode,
+                            min_sentences_per_chunk=min_sentences_per_chunk,
+                            min_characters_per_chunk=min_characters_per_chunk
+                        )
+                    except Exception as e:
+                        log.error(f"Error creating embedding model for LateChunker: {e}")
+                        raise ValueError(f"Error creating embedding model for LateChunker: {e}")
+                else:
+                    raise ValueError(f"Unknown chonkie chunker: {chunker_name}")
+                
+                # Process each document with chonkie
+                chunked_docs = []
+                for doc in docs:
+                    chunks = chunker(doc.page_content)
+                    for chunk in chunks:
+                        chunked_docs.append(
+                            Document(
+                                page_content=chunk.text,
+                                metadata={**doc.metadata, "start_index": chunk.start_index if hasattr(chunk, "start_index") else 0}
+                            )
+                        )
+                docs = chunked_docs
+                
+                # Skip the text_splitter.split_documents step since we've already chunked the documents
+                text_splitter = None
+                
+            except ImportError:
+                log.error("Chonkie library not installed. Please install with 'pip install chonkie'")
+                raise ValueError("Chonkie library not installed. Please install with 'pip install chonkie'")
+            except Exception as e:
+                log.error(f"Error using chonkie chunker: {e}")
+                raise ValueError(f"Error using chonkie chunker: {e}")
         else:
             raise ValueError(ERROR_MESSAGES.DEFAULT("Invalid text splitter"))
 
-        docs = text_splitter.split_documents(docs)
+        # Only split documents if we're using a text_splitter (not for Chonkie chunkers)
+        if text_splitter is not None:
+            docs = text_splitter.split_documents(docs)
 
     if len(docs) == 0:
         raise ValueError(ERROR_MESSAGES.EMPTY_CONTENT)
