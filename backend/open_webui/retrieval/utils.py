@@ -116,11 +116,69 @@ def query_doc_with_hybrid_search(
     r: float,
 ) -> dict:
     try:
-        bm25_retriever = BM25Retriever.from_texts(
-            texts=collection_result.documents[0],
-            metadatas=collection_result.metadatas[0],
-        )
-        bm25_retriever.k = k
+        from open_webui.config import RAG_BM25_IMPLEMENTATION, RAG_BM25S_METHOD, RAG_BM25S_K1, RAG_BM25S_B, RAG_BM25S_USE_NUMBA, RAG_BM25S_USE_MMAP
+        
+        import time
+        
+        # Choose BM25 implementation based on configuration
+        bm25_implementation = RAG_BM25_IMPLEMENTATION.value
+        log.info(f"BM25 Implementation: {bm25_implementation}")
+        
+        start_time = time.time()
+        
+        if bm25_implementation == "rank-bm25s":
+            try:
+                from open_webui.retrieval.bm25s_adapter import BM25SRetriever
+                log.info("Initializing rank-bm25s implementation for hybrid search")
+                
+                # Ensure we have valid data to pass to the retriever
+                if (collection_result and 
+                    hasattr(collection_result, 'documents') and 
+                    len(collection_result.documents) > 0 and 
+                    hasattr(collection_result, 'metadatas') and 
+                    len(collection_result.metadatas) > 0):
+                    
+                    bm25_retriever = BM25SRetriever(
+                        texts=collection_result.documents[0],
+                        metadatas=collection_result.metadatas[0],
+                        k=k
+                    )
+                    
+                    init_time = time.time() - start_time
+                    log.info(f"rank-bm25s initialization completed in {init_time:.4f} seconds")
+                else:
+                    log.warning("Invalid collection_result data for BM25SRetriever. Falling back to rank-bm25.")
+                    bm25_implementation = "rank-bm25"  # Update for logging
+                    bm25_retriever = BM25Retriever.from_texts(
+                        texts=[] if not collection_result or not hasattr(collection_result, 'documents') or len(collection_result.documents) == 0 else collection_result.documents[0],
+                        metadatas=[] if not collection_result or not hasattr(collection_result, 'metadatas') or len(collection_result.metadatas) == 0 else collection_result.metadatas[0],
+                    )
+                    bm25_retriever.k = k
+                    
+                    init_time = time.time() - start_time
+                    log.info(f"rank-bm25 fallback initialization completed in {init_time:.4f} seconds")
+            except Exception as e:
+                log.warning(f"Failed to initialize BM25SRetriever: {e}. Falling back to rank-bm25.")
+                bm25_implementation = "rank-bm25"  # Update for logging
+                bm25_retriever = BM25Retriever.from_texts(
+                    texts=[] if not collection_result or not hasattr(collection_result, 'documents') or len(collection_result.documents) == 0 else collection_result.documents[0],
+                    metadatas=[] if not collection_result or not hasattr(collection_result, 'metadatas') or len(collection_result.metadatas) == 0 else collection_result.metadatas[0],
+                )
+                bm25_retriever.k = k
+                
+                init_time = time.time() - start_time
+                log.info(f"rank-bm25 fallback initialization completed in {init_time:.4f} seconds")
+        else:
+            # Default to rank-bm25
+            log.info("Initializing rank-bm25 implementation for hybrid search")
+            bm25_retriever = BM25Retriever.from_texts(
+                texts=collection_result.documents[0],
+                metadatas=collection_result.metadatas[0],
+            )
+            bm25_retriever.k = k
+            
+            init_time = time.time() - start_time
+            log.info(f"rank-bm25 initialization completed in {init_time:.4f} seconds")
 
         vector_search_retriever = VectorSearchRetriever(
             collection_name=collection_name,
@@ -128,6 +186,8 @@ def query_doc_with_hybrid_search(
             top_k=k,
         )
 
+        # Create ensemble retriever
+        log.info(f"Creating ensemble retriever with BM25 implementation: {bm25_implementation}")
         ensemble_retriever = EnsembleRetriever(
             retrievers=[bm25_retriever, vector_search_retriever], weights=[0.5, 0.5]
         )
@@ -142,7 +202,16 @@ def query_doc_with_hybrid_search(
             base_compressor=compressor, base_retriever=ensemble_retriever
         )
 
+        # Time the actual retrieval process
+        retrieval_start_time = time.time()
         result = compression_retriever.invoke(query)
+        retrieval_time = time.time() - retrieval_start_time
+        
+        # Log the retrieval time with implementation info
+        total_time = time.time() - start_time
+        log.info(f"BM25 Implementation: {bm25_implementation}")
+        log.info(f"BM25 Retrieval time: {retrieval_time:.4f} seconds")
+        log.info(f"Total process time (init + retrieval): {total_time:.4f} seconds")
 
         distances = [d.metadata.get("score") for d in result]
         documents = [d.page_content for d in result]

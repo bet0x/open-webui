@@ -239,7 +239,7 @@ class PersistentConfig(Generic[T]):
             log.info(f"Updated {self.env_name} to new value {self.value}")
 
     def save(self):
-        log.info(f"Saving '{self.env_name}' to the database")
+        log.info(f"Saving '{self.env_name}' to the database - {self.value}")
         path_parts = self.config_path.split(".")
         sub_config = CONFIG_DATA
         for key in path_parts[:-1]:
@@ -1608,6 +1608,51 @@ DEFAULT_CODE_INTERPRETER_PROMPT = """
 
 Ensure that the tools are effectively utilized to achieve the highest-quality analysis for the user."""
 
+
+####################################
+# BM25 Configuration
+####################################
+
+# Configuration for BM25 implementation
+RAG_BM25_IMPLEMENTATION = PersistentConfig(
+    "RAG_BM25_IMPLEMENTATION",
+    "rag.bm25.implementation",
+    os.environ.get("RAG_BM25_IMPLEMENTATION", "rank-bm25")  # Default to rank-bm25 implementation
+)
+
+# Configuration for BM25s memory mapping
+RAG_BM25S_USE_MMAP = PersistentConfig(
+    "RAG_BM25S_USE_MMAP",
+    "rag.bm25s.use_mmap",
+    os.environ.get("RAG_BM25S_USE_MMAP", "False").lower() == "true"
+)
+
+# Configuration for BM25s method
+RAG_BM25S_METHOD = PersistentConfig(
+    "RAG_BM25S_METHOD",
+    "rag.bm25s.method",
+    os.environ.get("RAG_BM25S_METHOD", "lucene")  # Default to Lucene implementation
+)
+
+# Configuration for BM25s parameters
+RAG_BM25S_K1 = PersistentConfig(
+    "RAG_BM25S_K1",
+    "rag.bm25s.k1",
+    float(os.environ.get("RAG_BM25S_K1", "1.5"))  # Default k1 parameter
+)
+
+RAG_BM25S_B = PersistentConfig(
+    "RAG_BM25S_B",
+    "rag.bm25s.b",
+    float(os.environ.get("RAG_BM25S_B", "0.75"))  # Default b parameter
+)
+
+# Configuration for BM25s Numba acceleration
+RAG_BM25S_USE_NUMBA = PersistentConfig(
+    "RAG_BM25S_USE_NUMBA",
+    "rag.bm25s.use_numba",
+    os.environ.get("RAG_BM25S_USE_NUMBA", "True").lower() == "true"
+)
 
 ####################################
 # Vector Database

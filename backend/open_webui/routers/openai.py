@@ -739,11 +739,19 @@ async def generate_chat_completion(
         else:
             try:
                 response = await r.json()
+                log.info(f"Response successfully parsed as JSON: {type(response)}")
             except Exception as e:
-                log.error(e)
-                response = await r.text()
+                log.error(f"Error parsing JSON response: {e}")
+                response_text = await r.text()
+                log.error(f"Raw response text: {response_text[:200]}...")
+                response = response_text
 
             r.raise_for_status()
+            
+            # Log response structure for debugging
+            if isinstance(response, dict):
+                log.info(f"Response keys: {list(response.keys())}")
+            
             return response
     except Exception as e:
         log.exception(e)
